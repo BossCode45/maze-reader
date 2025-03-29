@@ -1,4 +1,6 @@
 #include "PNGImage.h"
+#include "zlib.h"
+#include <bitset>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
@@ -9,6 +11,7 @@ using std::cout, std::endl;
 PNGImage::PNGImage(std::string filename)
 	:reader(filename)
 {
+	//cout << "Reader good" << endl;
 	REGISTER_CHUNK_READER(IHDR);
 	REGISTER_CHUNK_READER(iCCP);
 	REGISTER_CHUNK_READER(sRGB);
@@ -20,11 +23,15 @@ PNGImage::PNGImage(std::string filename)
 	REGISTER_CHUNK_READER(IDAT);
 	REGISTER_CHUNK_READER(IEND);
 
+	//cout << "Chunk readers loaded" << endl;
+
 	char signature[8];
-	uint8_t expected[] = {137, 80, 78, 71, 13, 10, 26};
+	uint8_t expected[] = {137, 80, 78, 71, 13, 10, 26, 10};
 	reader.readBytes(signature, 8);
-	if(strncmp(signature, (char*)expected, 8) == 0)
+	if(strncmp(signature, (char*)expected, 8) != 0)
 		cout << "UH OH" << endl;
+
+	//cout << "PNG image initialised" << endl;
 }
 
 bool PNGImage::readNextChunk()
@@ -35,7 +42,7 @@ bool PNGImage::readNextChunk()
 	
 	char chunkType[4];
 	reader.readBytes(chunkType, 4);
-	std::string chunkName(chunkType);
+	std::string chunkName(chunkType, 4);
 	cout << "-------------" << endl;
 	cout << "|Chunk: " << chunkName << "|" << endl;
 	cout << "-------------" << endl;
@@ -57,6 +64,7 @@ bool PNGImage::readNextChunk()
 	(this->*chunkReader)(chunkSize);
 
 	reader.skipBytes(4); // CRC
+		
 	return true;
 }
 
@@ -88,17 +96,59 @@ DEFINE_CHUNK_READER(iCCP)
 	uint8_t compresssionMethod = reader.readByte();
 	chunkSize--;
 	cout << 0+compresssionMethod << endl;
-	uint8_t zlibFlags = reader.readByte();
+	uint8_t CMF = reader.readByte();
+	uint8_t CM = CMF & 0b00001111;
+	uint8_t CINFO = (CMF & 0b11110000) >> 4;
 	chunkSize--;
-	uint8_t additionalFlags = reader.readByte();
+	uint8_t FLG = reader.readByte();
+	bool check = (CMF * 256 + FLG)%31 == 0;
+	bool FDICT = FLG & 0b00100000;
+	uint8_t FLEVEL = FLG & 0b11000000;
 	chunkSize--;
-	cout << 0+zlibFlags << " " << 0+additionalFlags << endl;
+	cout << std::bitset<4>(CM) << ", " << std::bitset<4>(CINFO) << ", " << (check?"Valid":"Failed checksum") << ", " << (FDICT?"Dict is present":"No dict present") << ", " << std::bitset<2>(FLEVEL) << endl;
 	char compressedData[chunkSize - 4];
 	reader.readBytes(compressedData, chunkSize - 4);
-	cout << chunkSize - 4 << endl;
-	uint32_t checkValue = reader.readData<uint32_t>();
+
+	const int compressedSize = chunkSize - 4;
 
 	
+    cout << std::bitset<8>(compressedData[0]) << endl;
+	
+	std::string bits = "";
+	int pos = 0;
+	for(int i = 0; i < compressedSize; i++)
+	{
+		for(int j = 0; j < 8; j++)
+		{
+			bits += (compressedData[i] & (0b1 << j))?"1":"0";
+		}
+	}
+	//cout << bits << endl;
+	cout << bits[pos++] << endl << bits[pos++] << bits[pos++] << endl;
+
+	ZLibInflator zlib;
+	const int codeCount = 288;
+	uint8_t lens[codeCount];
+	uint16_t codes[codeCount];
+	for(int i = 0; i < codeCount; i++)
+	{
+		if(i < 144)
+			lens[i] = 8;
+		else if(i < 256)
+			lens[i] = 9;
+		else if(i < 280)
+			lens[i] = 7;
+		else if(i < 288)
+			lens[i] = 8;
+	}
+	zlib.calculateCodes(lens, codes, codeCount);
+	zlib.buildHuffmanTree(lens, codes, codeCount);
+	
+	cout << zlib.getNextCode(bits, &pos) << endl;
+	
+	uint32_t checkValue = reader.readData<uint32_t>();
+
+	end = true;
 }
 
 DEFINE_CHUNK_READER(sRGB)
@@ -183,7 +233,24 @@ DEFINE_CHUNK_READER(tEXt)
 
 DEFINE_CHUNK_READER(IDAT)
 {
-	reader.skipBytes(chunkSize);
+	//uint8_t compresssionMethod = reader.readByte();
+	//chunkSize--;
+	//cout << 0+compresssionMethod << endl;
+	uint8_t CMF = reader.readByte();
+	uint8_t CM = (CMF & 0b11110000) >> 4;
+	uint8_t CINFO = CMF & 0b00001111;
+	chunkSize--;
+	uint8_t FLG = reader.readByte();
+	bool check = (CMF * 256 + FLG)%31 == 0;
+	bool FDICT = FLG & 0b00000100;
+	uint8_t FLEVEL = FLG & 0b00000011;
+	chunkSize--;
+	cout << std::bitset<4>(CM) << ", " << std::bitset<4>(CINFO) << ", " << (check?"Valid":"Failed checksum") << ", " << (FDICT?"Dict is present":"No dict present") << ", " << std::bitset<2>(FLEVEL) << endl;
+	char compressedData[chunkSize - 4];
+	reader.readBytes(compressedData, chunkSize - 4);
+	cout << chunkSize - 4 << endl;
+
+	end = true;
 }
 
 DEFINE_CHUNK_READER(IEND)

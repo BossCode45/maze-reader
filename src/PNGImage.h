@@ -1,3 +1,5 @@
+#pragma once
+
 #include "reader.h"
 #include <cstddef>
 #include <cstdint>
