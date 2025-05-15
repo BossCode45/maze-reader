@@ -21,10 +21,13 @@ public:
 	void readBytes(char* out, size_t len);
 
 	void skipBytes(size_t len);
+
+	void close();
 private:
 	char buffer[BUFFER_SIZE];
 	size_t pos;
 	FILE* file;
+	bool ready = false;
 
 	void refreshBuffer();
 };

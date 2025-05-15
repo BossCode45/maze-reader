@@ -12,10 +12,12 @@ Reader::Reader(std::string filename)
 {
 	file = fopen(filename.c_str(), "rb");
 	refreshBuffer();
+	ready = true;
 }
 Reader::~Reader()
 {
-	fclose(file);
+	if(ready)
+		fclose(file);
 }
 
 char Reader::readByte()
@@ -99,4 +101,10 @@ void Reader::skipBytes(size_t len)
 		len -= bytesToRead;
 		pos += bytesToRead;
 	}
+}
+
+void Reader::close()
+{
+	fclose(file);
+	ready = false;
 }

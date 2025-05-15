@@ -1,15 +1,18 @@
 #include "PNGImage.h"
 #include "zlib.h"
+#include "puff.h"
 #include <bitset>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <array>
 
 using std::cout, std::endl;
 
 PNGImage::PNGImage(std::string filename)
 	:reader(filename)
+	,idatData()
 {
 	//cout << "Reader good" << endl;
 	REGISTER_CHUNK_READER(IHDR);
@@ -78,6 +81,18 @@ DEFINE_CHUNK_READER(IHDR)
 	filterMethod = reader.readData<uint8_t>();
 	interlaceMethod = reader.readData<uint8_t>();
 	cout << "Width: " << width << ", Height: " << height << ", Bit depth: " << 0+bitDepth << ", Color type: " << 0+colorType << ", Compression method: " << 0+compressionMethod << ", Filter method: " << 0+filterMethod << ", Interlace method: " << 0+interlaceMethod << endl;
+
+
+	imageData = new uint8_t[height * (width * 3 + 1)];
+	
+/*
+	Scanline<RGBPixel<uint8_t>>* lines = new Scanline<RGBPixel<uint8_t>> [height];
+	for(int i = 0; i < height; i++)
+	{
+		lines[i].pixels = new RGBPixel<uint8_t>[width];
+	}
+	imageData = (uint8_t*)lines;
+*/
 }
 
 DEFINE_CHUNK_READER(iCCP)
@@ -110,45 +125,10 @@ DEFINE_CHUNK_READER(iCCP)
 	reader.readBytes(compressedData, chunkSize - 4);
 
 	const int compressedSize = chunkSize - 4;
-
-	
-    cout << std::bitset<8>(compressedData[0]) << endl;
-	
-	std::string bits = "";
-	int pos = 0;
-	for(int i = 0; i < compressedSize; i++)
-	{
-		for(int j = 0; j < 8; j++)
-		{
-			bits += (compressedData[i] & (0b1 << j))?"1":"0";
-		}
-	}
-	//cout << bits << endl;
-	cout << bits[pos++] << endl << bits[pos++] << bits[pos++] << endl;
-
-	ZLibInflator zlib;
-	const int codeCount = 288;
-	uint8_t lens[codeCount];
-	uint16_t codes[codeCount];
-	for(int i = 0; i < codeCount; i++)
-	{
-		if(i < 144)
-			lens[i] = 8;
-		else if(i < 256)
-			lens[i] = 9;
-		else if(i < 280)
-			lens[i] = 7;
-		else if(i < 288)
-			lens[i] = 8;
-	}
-	zlib.calculateCodes(lens, codes, codeCount);
-	zlib.buildHuffmanTree(lens, codes, codeCount);
-	
-	cout << zlib.getNextCode(bits, &pos) << endl;
 	
 	uint32_t checkValue = reader.readData<uint32_t>();
 
-	end = true;
+	//end = true;
 }
 
 DEFINE_CHUNK_READER(sRGB)
@@ -233,27 +213,45 @@ DEFINE_CHUNK_READER(tEXt)
 
 DEFINE_CHUNK_READER(IDAT)
 {
-	//uint8_t compresssionMethod = reader.readByte();
-	//chunkSize--;
-	//cout << 0+compresssionMethod << endl;
-	uint8_t CMF = reader.readByte();
-	uint8_t CM = (CMF & 0b11110000) >> 4;
-	uint8_t CINFO = CMF & 0b00001111;
-	chunkSize--;
-	uint8_t FLG = reader.readByte();
-	bool check = (CMF * 256 + FLG)%31 == 0;
-	bool FDICT = FLG & 0b00000100;
-	uint8_t FLEVEL = FLG & 0b00000011;
-	chunkSize--;
-	cout << std::bitset<4>(CM) << ", " << std::bitset<4>(CINFO) << ", " << (check?"Valid":"Failed checksum") << ", " << (FDICT?"Dict is present":"No dict present") << ", " << std::bitset<2>(FLEVEL) << endl;
+	if(idatData.size() == 0)
+	{
+		uint8_t CMF = reader.readByte();
+		uint8_t CM = (CMF & 0b11110000) >> 4;
+		uint8_t CINFO = CMF & 0b00001111;
+		chunkSize--;
+		uint8_t FLG = reader.readByte();
+		bool check = (CMF * 256 + FLG)%31 == 0;
+		bool FDICT = FLG & 0b00000100;
+		uint8_t FLEVEL = FLG & 0b00000011;
+		chunkSize--;
+		cout << std::bitset<4>(CM) << ", " << std::bitset<4>(CINFO) << ", " << (check?"Valid":"Failed checksum") << ", " << (FDICT?"Dict is present":"No dict present") << ", " << std::bitset<2>(FLEVEL) << endl;
+	}
+	
 	char compressedData[chunkSize - 4];
-	reader.readBytes(compressedData, chunkSize - 4);
 	cout << chunkSize - 4 << endl;
+	reader.readBytes(compressedData, chunkSize - 4);
+	for(int i = 0; i < chunkSize - 4; i++)
+		idatData.push_back(compressedData[i]);
 
-	end = true;
+	/*
+	unsigned long compressedSize = chunkSize - 4;
+	
+	unsigned long imageDataSize = height * (width * 3 + 1);
+	cout << zlib.decodeData((uint8_t*)compressedData, compressedSize, imageData, imageDataSize) << endl;
+	//cout << (int)puff((unsigned char*)imageData, &imageDataSize, (const unsigned char*)compressedData, &compressedSize) << endl;
+	*/
+	
+	uint32_t checkValue = reader.readData<uint32_t>();
+
+	//end = true;
 }
 
 DEFINE_CHUNK_READER(IEND)
 {
+	unsigned long imageDataSize = height * (width * 3 + 1);
+	unsigned long idatSize = idatData.size();
+	//cout << (int)puff((unsigned char*)imageData, &imageDataSize, idatData.data(), &idatSize) << endl;
+	cout << zlib.decodeData(idatData.data(), idatData.size(), imageData, imageDataSize) << endl;
 	end = true;
+	reader.close();
 }

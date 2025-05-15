@@ -22,5 +22,6 @@ $(OBJS_DIR)/%.o : $(SOURCE_DIR)/%.cpp
 
 $(OBJS_DIR)/main.o: $(SOURCE_DIR)/main.cpp $(SOURCE_HEADERS)
 $(OBJS_DIR)/reader.o: $(SOURCE_DIR)/reader.cpp $(SOURCE_DIR)/reader.h $(SOURCE_DIR)/debug.h
-$(OBJS_DIR)/PNGImage.o: $(SOURCE_DIR)/PNGImage.cpp $(SOURCE_DIR)/PNGImage.h $(SOURCE_DIR)/debug.h
+$(OBJS_DIR)/image.o: $(SOURCE_DIR)/image.cpp $(SOURCE_DIR)/image.h
+$(OBJS_DIR)/PNGImage.o: $(SOURCE_DIR)/PNGImage.cpp $(SOURCE_DIR)/PNGImage.h $(SOURCE_DIR)/debug.h $(SOURCE_DIR)/image.h $(SOURCE_DIR)/puff.h
 $(OBJS_DIR)/zlib.o: $(SOURCE_DIR)/zlib.cpp $(SOURCE_DIR)/zlib.h

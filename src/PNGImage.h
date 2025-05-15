@@ -1,29 +1,27 @@
 #pragma once
 
 #include "reader.h"
+#include "image.h"
+#include "zlib.h"
 #include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 #define CHUNK_READER(X) void X(uint32_t chunkSize)
 #define REGISTER_CHUNK_READER(X) chunkReaders.insert({#X, &PNGImage::X})
 #define DEFINE_CHUNK_READER(X) void PNGImage::X(uint32_t chunkSize)
 
-class PNGImage
+class PNGImage : Image
 {
+private:
+	ZLibInflator zlib;
+	std::vector<uint8_t> idatData;
 public:
 	PNGImage(std::string filename);
-
-	// IHDR
-	uint32_t width;
-	uint32_t height;
-	uint8_t bitDepth;
-	uint8_t colorType;
-	uint8_t compressionMethod;
-	uint8_t filterMethod;
-	uint8_t interlaceMethod;
-
+	~PNGImage() = default;
+	
 	// sRGB
 	uint8_t renderingIntent;
 
