@@ -16,8 +16,8 @@ struct HuffmanTree
 struct StreamData
 {
 	uint8_t* data;
-	long length;
-	long pos;
+	unsigned long length;
+	unsigned long pos;
 };
 
 class ZLibInflator
@@ -48,5 +48,5 @@ public:
 	uint16_t getNextCode(StreamData* stream);
 	uint16_t getNextCode(StreamData* stream, HuffmanTree* tree);
 
-	int decodeData(uint8_t* data, long length, uint8_t* out, long outLength);
+	int decodeData(uint8_t* data, unsigned long length, uint8_t* out, unsigned long outLength);
 };

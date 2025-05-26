@@ -4,9 +4,12 @@
 #include <bitset>
 #include <cctype>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <array>
+#include <stdexcept>
 
 using std::cout, std::endl;
 
@@ -82,8 +85,23 @@ DEFINE_CHUNK_READER(IHDR)
 	interlaceMethod = reader.readData<uint8_t>();
 	cout << "Width: " << width << ", Height: " << height << ", Bit depth: " << 0+bitDepth << ", Color type: " << 0+colorType << ", Compression method: " << 0+compressionMethod << ", Filter method: " << 0+filterMethod << ", Interlace method: " << 0+interlaceMethod << endl;
 
+	if(colorType != 2 && colorType != 6)
+		throw std::invalid_argument("Only color types 2 and 6 are supported");
 
-	imageData = new uint8_t[height * (width * 3 + 1)];
+	switch(colorType)
+	{
+	case 2: colorValues = 3; break;
+	case 6: colorValues = 4; break;
+	}
+
+
+	bpp = colorValues * (bitDepth/8);
+
+	unsigned long imageDataSize = width * height * bpp;
+
+	cout << "Assigning " << imageDataSize << " bytes for image" << endl;
+
+	imageData = new uint8_t[imageDataSize];
 	
 /*
 	Scanline<RGBPixel<uint8_t>>* lines = new Scanline<RGBPixel<uint8_t>> [height];
@@ -227,10 +245,9 @@ DEFINE_CHUNK_READER(IDAT)
 		cout << std::bitset<4>(CM) << ", " << std::bitset<4>(CINFO) << ", " << (check?"Valid":"Failed checksum") << ", " << (FDICT?"Dict is present":"No dict present") << ", " << std::bitset<2>(FLEVEL) << endl;
 	}
 	
-	char compressedData[chunkSize - 4];
-	cout << chunkSize - 4 << endl;
-	reader.readBytes(compressedData, chunkSize - 4);
-	for(int i = 0; i < chunkSize - 4; i++)
+	char compressedData[chunkSize];
+	reader.readBytes(compressedData, chunkSize);
+	for(int i = 0; i < chunkSize; i++)
 		idatData.push_back(compressedData[i]);
 
 	/*
@@ -241,17 +258,111 @@ DEFINE_CHUNK_READER(IDAT)
 	//cout << (int)puff((unsigned char*)imageData, &imageDataSize, (const unsigned char*)compressedData, &compressedSize) << endl;
 	*/
 	
-	uint32_t checkValue = reader.readData<uint32_t>();
+	//uint32_t checkValue = reader.readData<uint32_t>();
 
 	//end = true;
 }
 
+uint8_t paethPredictor(uint8_t a, uint8_t b, uint8_t c)
+{
+	int p = a + b - c;
+	int pa = abs(p - a);
+	int pb = abs(p - b);
+	int pc = abs(p - c);
+	if (pa <= pb && pa <= pc)
+		return a;
+	else if (pb <= pc)
+			return b;
+	else
+		return c;
+}
+
 DEFINE_CHUNK_READER(IEND)
 {
-	unsigned long imageDataSize = height * (width * 3 + 1);
+	unsigned long imageDataSize = height * (width * bpp + 1);
+	uint8_t* pngImageData = new uint8_t[imageDataSize];
 	unsigned long idatSize = idatData.size();
-	//cout << (int)puff((unsigned char*)imageData, &imageDataSize, idatData.data(), &idatSize) << endl;
-	cout << zlib.decodeData(idatData.data(), idatData.size(), imageData, imageDataSize) << endl;
+	cout << "My inflate " << zlib.decodeData((uint8_t*)idatData.data(), idatSize, pngImageData, imageDataSize) << endl;
 	end = true;
 	reader.close();
+
+
+	FILE* fd = fopen("tmp.bmp", "w");
+	char magic[] = "BM";
+	fwrite(magic, sizeof(char), 2, fd);
+	uint32_t fileSize = 14 + 12 + width*height*/*(bitDepth/8)*/8*3;
+	fwrite(&fileSize, sizeof(uint32_t), 1, fd);
+	char zero[] = "\0\0\0\0";
+	fwrite(zero, sizeof(char), 4, fd);
+	uint32_t offset = 26;
+	fwrite(&offset, sizeof(uint32_t), 1, fd);
+	uint32_t headerSize = 12;
+	fwrite(&headerSize, sizeof(uint32_t), 1, fd);
+	uint16_t width = this->width;
+	uint16_t height = this->height;
+	uint16_t colorPlanes = 1;
+	uint16_t bitsPerPixel = /*bitDepth*/8*3;
+	fwrite(&width, sizeof(uint16_t), 1, fd);
+	fwrite(&height, sizeof(uint16_t), 1, fd);
+	fwrite(&colorPlanes, sizeof(uint16_t), 1, fd);
+	fwrite(&bitsPerPixel, sizeof(uint16_t), 1, fd);
+
+#define imageDataIndex(x, y) imageData[y*width*bpp + x]
+#define pngImageDataIndex(x, y) pngImageData[y*(width*bpp + 1) + x + 1]
+#define filterByte(y) pngImageDataIndex(-1, y)
+
+	for(int y = 0; y < height; y++)
+	{
+		for(int x = 0; x < width*bpp; x++)
+		{
+			if(filterByte(y) == 0)
+			{
+				imageDataIndex(x, y) = pngImageDataIndex(x, y);
+			}
+			else if(filterByte(y) == 1)
+			{
+				uint8_t sub = pngImageDataIndex(x, y);
+				uint8_t raw = (x>=bpp)?imageDataIndex((x-bpp), y):0;
+				imageDataIndex(x, y) = sub + raw;
+			}
+			else if(filterByte(y) == 2)
+			{
+				uint8_t up = pngImageDataIndex(x, y);
+				uint8_t prior = (y>=1)?imageDataIndex(x, (y-1)):0;
+				imageDataIndex(x, y) = up + prior;
+			}
+			else if(filterByte(y) == 4)
+			{
+				uint8_t a = (x>=bpp)?imageDataIndex((x-bpp), y):0;
+				uint8_t b = (y>=1)?imageDataIndex(x, (y-1)):0;
+				uint8_t c = (x>=bpp && y>=1)?imageDataIndex((x-bpp), (y-1)):0;
+				uint8_t paeth = pngImageDataIndex(x, y);
+				uint8_t predictor = paethPredictor(a, b, c);
+				imageDataIndex(x, y) = paeth + predictor;
+			}
+			else
+			{
+				cout << "No method for filter type: " << (int)filterByte(y) << ", row: " << y << endl;
+				throw "uh oh";
+			}
+		}
+	}
+
+#undef imageDataIndex
+#undef pngImageDataIndex
+#undef filterByte
+	
+	for(int y = height-1; y >= 0; y--)
+	{
+		for(int x = 0; x < width; x++)
+		{
+			Pixel<uint8_t> pixel = getPixel<uint8_t>(x, y);
+			fwrite(&pixel.b, bitDepth/8, 1, fd);
+			fwrite(&pixel.g, bitDepth/8, 1, fd);
+			fwrite(&pixel.r, bitDepth/8, 1, fd);
+		}
+	}
+
+	delete [] pngImageData;
+	fclose(fd);
 }

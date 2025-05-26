@@ -4,42 +4,18 @@
 #include <cstdint>
 
 template <typename T>
-struct RGBPixel
+struct Pixel
 {
-	T r, g, b;
-};
-
-template <typename T>
-struct RGBAPixel
-{	T r, g, b, a;
+	T r, g, b, a;
 };
 
 
-/*
-template <typename T>
-union Scanline
-{
-	struct
-	{
-		uint8_t filterMethod;
-		T* pixels;
-	} data;
-	uint8_t* raw;
-};
-*/
-
-template <typename T>
-union Scanline
-{
-	uint8_t filterMethod;
-	T* pixels;
-};
-
-#include <cstdint>
 class Image
 {
 protected:
 	uint8_t* imageData;
+	uint8_t colorValues;
+	uint8_t bpp;
 public:
 	Image() = default;
 	~Image();
@@ -51,4 +27,25 @@ public:
 	uint8_t compressionMethod;
 	uint8_t filterMethod;
 	uint8_t interlaceMethod;
+
+	template <typename T>
+	Pixel<T> getPixel(unsigned int x, unsigned int y);
 };
+
+
+template <typename T>
+Pixel<T> Image::getPixel(unsigned int x, unsigned int y)
+{
+	Pixel<T> pixel;
+
+	pixel.r = (T)imageData[y * width * colorValues * bitDepth/8 + x * colorValues * bitDepth/8];
+	pixel.g = (T)imageData[y * width * colorValues * bitDepth/8 + x * colorValues * bitDepth/8 + 1];
+	pixel.b = (T)imageData[y * width * colorValues * bitDepth/8 + x * colorValues * bitDepth/8 + 2];
+
+	if(colorValues == 4)
+		pixel.a = imageData[y * width * colorValues * bitDepth/8 + x * colorValues * bitDepth/8 + 3];
+	else
+		pixel.a = 0;
+
+	return pixel;
+}

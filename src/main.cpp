@@ -8,12 +8,20 @@
 
 using std::cout, std::endl;
 
-int main()
+int main(int argc, char* argv[])
 {
 	//ZLibInflator zlib;
 	//zlib.test();
 
-	PNGImage image("test.png");
+	if(argc < 2)
+	{
+		cout << "usage: " << argv[0] << " <image>" << endl;
+		return 1;
+	}
+	
+	std::string filename = argv[1];
+
+	PNGImage image(filename);
 
 	while(image.readNextChunk()){}
 }

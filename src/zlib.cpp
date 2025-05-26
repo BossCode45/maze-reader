@@ -135,10 +135,10 @@ void ZLibInflator::buildDynamicHuffmanTree(StreamData* stream)
 }
 void ZLibInflator::buildDynamicHuffmanTree(StreamData* stream, HuffmanTree* treeOut, HuffmanTree* distTreeOut)
 {
-	const int nLitCodes = nextBits(stream, 5) + 257;
+	unsigned int nLitCodes = nextBits(stream, 5) + 257;
 	uint16_t litCodes[nLitCodes];
 
-	const int nDistCodes = nextBits(stream, 5) + 1;
+	unsigned int nDistCodes = nextBits(stream, 5) + 1;
 	uint16_t distCodes[nDistCodes];
 
 	uint8_t codeLens[nLitCodes + nDistCodes];
@@ -165,7 +165,7 @@ void ZLibInflator::buildDynamicHuffmanTree(StreamData* stream, HuffmanTree* tree
 	{
 		uint16_t code = getNextCode(stream, &lenCodeTree);
 		if(code < 16)
-			codeLens[i++] = code;
+			codeLens[i++] = (uint8_t)code;
 		else if(code < 19)
 		{
 			code -= 16;
@@ -194,21 +194,19 @@ void ZLibInflator::buildDynamicHuffmanTree(StreamData* stream, HuffmanTree* tree
 	calculateCodes(codeLens, litCodes, nLitCodes);
 	buildHuffmanTree(codeLens, litCodes, nLitCodes, treeOut);
 
-	calculateCodes(codeLens + nLitCodes, distCodes, nDistCodes);
-	buildHuffmanTree(codeLens + nLitCodes, distCodes, nDistCodes, distTreeOut);
+	calculateCodes(&codeLens[nLitCodes], distCodes, nDistCodes);
+	buildHuffmanTree(&codeLens[nLitCodes], distCodes, nDistCodes, distTreeOut);
 }
 
 void HuffmanTree::free()
 {
 	if(left != nullptr)
 	{
-		left->free();
 		delete left;
 		left = nullptr;
 	}
 	if(right != nullptr)
 	{
-		right->free();
 		delete right;
 		right = nullptr;
 	}
@@ -265,24 +263,22 @@ uint16_t ZLibInflator::nextBits(StreamData* stream, int bits)
 	return out;
 }
 
-int ZLibInflator::decodeData(uint8_t* data, long length, uint8_t* out, long outLength)
+int ZLibInflator::decodeData(uint8_t* data, unsigned long length, uint8_t* out, unsigned long outLength)
 {
-	tree = HuffmanTree();
-	distTree = HuffmanTree();
 	staticTree = false;
-	const int lenStart[] = { /* Size base for length codes 257..285 */
+	const unsigned int lenStart[] = { /* Size base for length codes 257..285 */
         3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
         35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
-    const int lenExtra[] = { /* Extra bits for length codes 257..285 */
+    const unsigned int lenExtra[] = { /* Extra bits for length codes 257..285 */
         0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
         3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
 
 	
-    const int distStart[] = { /* Offset base for distance codes 0..29 */
+    const unsigned int distStart[] = { /* Offset base for distance codes 0..29 */
         1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
         257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145,
         8193, 12289, 16385, 24577};
-    const int distExtra[] = { /* Extra bits for distance codes 0..29 */
+    const unsigned int distExtra[] = { /* Extra bits for distance codes 0..29 */
         0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
         7, 7, 8, 8, 9, 9, 10, 10, 11, 11,
         12, 12, 13, 13};
@@ -298,9 +294,9 @@ int ZLibInflator::decodeData(uint8_t* data, long length, uint8_t* out, long outL
 		final = nextBit(&stream);
 		int method = nextBits(&stream, 2);
 
-		cout << (final?"Final chunk!\n":"") << "Compression method: " << method << endl;
+		//cout << (final?"Final chunk!\n":"") << "Compression method: " << method << endl;
 
-		cout << outPos << " " << outLength << endl;
+		//cout << outPos << " " << outLength << endl;
 		
 		if(method == 1)
 			buildStaticHuffmanTree();
@@ -308,8 +304,16 @@ int ZLibInflator::decodeData(uint8_t* data, long length, uint8_t* out, long outL
 			buildDynamicHuffmanTree(&stream);
 		else if(method == 0)
 		{
-			cout << "Non compressed not implemented" << endl;
-			return 1;
+			while(stream.pos%8 != 0)
+				stream.pos++;
+			uint16_t LEN = nextBits(&stream, 16);
+			uint16_t NLEN = nextBits(&stream, 16);
+			NLEN++;
+			if(LEN + NLEN != 0)
+				throw std::invalid_argument("NLEN and LEN don't match");
+			for(int i = 0; i < LEN; i++)
+				out[outPos++] = nextBits(&stream, 8);
+			continue;
 		}
 		else
 		{
@@ -321,27 +325,28 @@ int ZLibInflator::decodeData(uint8_t* data, long length, uint8_t* out, long outL
 		do
 		{
 			code = getNextCode(&stream);
-			if(outPos >= outLength && code != 256)
+			if(outPos > outLength && code != 256)
 			{
-				cout << "End of output buffer normal" << endl;
-				cout << outPos << endl;
-				cout << outLength << endl;
-				return 1;
+				throw std::out_of_range("No more space left in image (normal)");
 			}
 			if(code < 256)
-				out[outPos++] = code;
+				out[outPos++] = (uint8_t)code;
 			else if(code > 256)
 			{
-				int len = lenStart[code-257] + (int)nextBits(&stream, lenExtra[code-257]);
-				int distCode = getNextCode(&stream, &distTree);
-				int dist = distStart[distCode] + (int)nextBits(&stream, distExtra[distCode]);
-				if(outPos + len >= outLength)
-					len = outLength - outPos;
-				memmove(out + outPos, out + outPos - dist, len);
-				outPos += len;
+				unsigned int len = lenStart[code-257] + (int)nextBits(&stream, lenExtra[code-257]);
+				unsigned int distCode = getNextCode(&stream, &distTree);
+				
+				unsigned int dist = distStart[distCode] + (int)nextBits(&stream, distExtra[distCode]);
+				if(outPos + len > outLength)
+				{
+					throw std::out_of_range("No more space left in image (RLE error)");
+				}
+				for(int i = 0; i < len; i++)
+				{
+					out[outPos] = out[outPos - dist];
+					outPos++;
+				}
 			}
-			if(code == 256)
-				cout << "end code" << endl;
 		}
 		while(code != 256);
 	}
