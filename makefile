@@ -1,8 +1,8 @@
 OBJS_DIR := ./build
 SOURCE_DIR := ./src
 CXX := g++
-CXXFLAGS := -fsanitize=address -g
-LINKFLAGS := -fsanitize=address -static-libasan
+CXXFLAGS := -std=c++23 -fsanitize=address -g
+LINKFLAGS := -fsanitize=address -static-libasan -ltehimage
 DEBUG_FLAGS := 
 EXEC := maze-reader
 SOURCE_FILES := $(wildcard $(SOURCE_DIR)/*.cpp)
@@ -14,8 +14,8 @@ $(EXEC): $(OBJS)
 
 
 clean:
-	rm $(EXEC)
 	rm $(OBJS_DIR)/*
+	rm $(EXEC)
 
 $(OBJS_DIR)/%.o : $(SOURCE_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@

@@ -3,6 +3,7 @@
     inputs = {
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
         flake-utils.url = "github:numtide/flake-utils";
+        teh-image.url = "github:BossCode45/TehImage";
     };
     outputs = { self, nixpkgs, ... }@inputs:
         inputs.flake-utils.lib.eachDefaultSystem (system: let
@@ -13,6 +14,7 @@
                     pkgs.gcc
                     pkgs.gnumake
                     pkgs.clang-tools
+                    inputs.teh-image.packages.${system}.libTehImage
                 ];
             };
         });
